@@ -372,7 +372,7 @@ button { touch-action: manipulation; -webkit-user-select: none; user-select: non
 .act:focus-visible, .like-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .act svg { width: 26px; height: 26px; }
 .act.no { color: var(--ink); }
-.act.yes { color: var(--accent); }
+.act.yes { color: var(--accent); margin-left: auto; transform-origin: 100% 100%; }
 .swipe-hint {
   align-self: center;
   font-size: 12px;
@@ -534,7 +534,8 @@ const ARE_YOU_SURE = [
   { title: "Are you <i>really</i> sure?", body: "Think about all the good photos you'd get.", stay: "Okay, fine, take me back", leave: "Yes, I'm sure" },
   { title: "Ahmad's mom has been informed.", body: "She's not mad. Just disappointed.", stay: "I'll reconsider", leave: "Swipe left anyway" },
 ];
-const RUNAWAY = { maxDodges: 5, giveUp: "Fine. The ✕ will stay still now." };
+// The ✕ never lets itself be pressed. These pop up now and then while they chase it.
+const RUNAWAY_TAUNTS = { 3: "Nice try.", 6: "The ✕ is on a break.", 10: "It's never going to work.", 15: "Just press the heart." };
 /* ===================================================================== */
 
 const ICONS = {
@@ -669,21 +670,29 @@ function toast(text) {
 }
 
 /* ---------- Shrinking ✕, growing ♥ ---------- */
-// The further they scroll, the smaller ✕ gets and the bigger ♥ gets. It never grows back.
-card.addEventListener("scroll", () => {
+// The further they scroll (and the more they chase it), the smaller ✕ gets and the bigger ♥ gets.
+// It never grows back.
+function applyScale() {
+  const p = Math.min(1, stats.maxScroll * 1.5);
+  btnNo.style.setProperty("--s", Math.max(0.3, 1 - 0.65 * p - 0.05 * stats.dodges).toFixed(3));
+  btnYes.style.setProperty("--s", Math.min(1.8, 1 + 0.6 * p + 0.03 * stats.dodges).toFixed(3));
+}
+function onScroll() {
   const max = card.scrollHeight - card.clientHeight;
   const p = max > 0 ? Math.min(card.scrollTop / max, 1) : 0;
   if (p <= stats.maxScroll) return;
   stats.maxScroll = p;
-  btnNo.style.setProperty("--s", (1 - 0.5 * p).toFixed(3));
-  btnYes.style.setProperty("--s", (1 + 0.45 * p).toFixed(3));
-}, { passive: true });
+  applyScale();
+}
+card.addEventListener("scroll", onScroll, { passive: true });
+card.addEventListener("touchmove", onScroll, { passive: true });
 
 /* ---------- Runaway ✕ ---------- */
 function dodge(e) {
-  if (decided || sheetOpen || stats.dodges >= RUNAWAY.maxDodges) return;
   e.preventDefault();
+  if (decided || sheetOpen) return;
   stats.dodges++;
+  applyScale();
   const r = btnNo.getBoundingClientRect();
   if (!btnNo.classList.contains("runaway")) {
     // Pin it where it is first, so the jump animates.
@@ -707,7 +716,7 @@ function dodge(e) {
   btnNo.style.left = x + "px";
   btnNo.style.top = y + "px";
   try { navigator.vibrate && navigator.vibrate(8); } catch (_) {}
-  if (stats.dodges === RUNAWAY.maxDodges) setTimeout(() => toast(RUNAWAY.giveUp), 300);
+  if (RUNAWAY_TAUNTS[stats.dodges]) setTimeout(() => toast(RUNAWAY_TAUNTS[stats.dodges]), 250);
 }
 btnNo.addEventListener("touchstart", dodge, { passive: false });
 btnNo.addEventListener("pointerenter", e => { if (e.pointerType === "mouse") dodge(e); });
@@ -865,7 +874,8 @@ card.addEventListener("pointercancel", endDrag);
 card.addEventListener("click", e => { if (Math.abs(dx) > 8) { e.stopPropagation(); e.preventDefault(); dx = 0; } }, true);
 
 btnYes.addEventListener("click", () => decide("right", "tapped ♥"));
-btnNo.addEventListener("click", () => requestLeft("tapped ✕"));
+// The ✕ never works. Even if a tap somehow lands, it just runs away again.
+btnNo.addEventListener("click", dodge);
 card.addEventListener("click", e => { if (e.target.closest("[data-like]")) decide("right", "liked a photo or prompt"); });
 
 // A small left-right wiggle on open so people know the card swipes.
