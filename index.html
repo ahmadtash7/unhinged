@@ -161,26 +161,12 @@ button { touch-action: manipulation; -webkit-user-select: none; user-select: non
   text-align: center;
   padding: 24px;
 }
-.like-btn {
-  position: absolute;
-  right: 12px; bottom: 12px;
-  width: 46px; height: 46px;
-  border-radius: 50%;
-  border: 0;
-  background: var(--card);
-  color: var(--accent);
-  display: grid; place-items: center;
-  box-shadow: 0 2px 10px rgba(29,26,28,.18);
-  cursor: pointer;
-}
-.like-btn svg { width: 22px; height: 22px; }
-.like-btn:active { transform: scale(.92); }
 
 .prompt {
   position: relative;
   background: var(--card);
   border-radius: 10px;
-  padding: 26px 22px 64px;
+  padding: 26px 22px 30px;
 }
 .prompt .q {
   font-size: 14px;
@@ -369,12 +355,16 @@ button { touch-action: manipulation; -webkit-user-select: none; user-select: non
   pointer-events: none;
 }
 .act:active { transform: scale(.9); }
-.act:focus-visible, .like-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.act:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .act svg { width: 26px; height: 26px; }
 .act.no { color: var(--ink); }
 .act.yes { color: var(--accent); margin-left: auto; transform-origin: 100% 100%; }
 .swipe-hint {
-  align-self: center;
+  position: absolute;
+  left: 50%;
+  bottom: calc(49px + env(safe-area-inset-bottom, 0px));
+  transform: translate(-50%, 50%);
+  white-space: nowrap;
   font-size: 12px;
   color: var(--muted);
   background: var(--card);
@@ -561,12 +551,11 @@ const PLACEHOLDER_BG = [
 
 function photoHTML(i) {
   const src = PROFILE.photos[i];
-  const btn = `<button class="like-btn" type="button" aria-label="Like this photo" data-like>${heart}</button>`;
-  if (src) return `<div class="photo"><img src="${esc(src)}" ${i ? 'loading="lazy"' : 'fetchpriority="high"'} decoding="async" alt="Photo ${i + 1} of ${esc(PROFILE.name)}" draggable="false">${btn}</div>`;
-  return `<div class="photo placeholder" style="background:${PLACEHOLDER_BG[i % PLACEHOLDER_BG.length]}">Photo ${i + 1}${btn}</div>`;
+  if (src) return `<div class="photo"><img src="${esc(src)}" ${i ? 'loading="lazy"' : 'fetchpriority="high"'} decoding="async" alt="Photo ${i + 1} of ${esc(PROFILE.name)}" draggable="false"></div>`;
+  return `<div class="photo placeholder" style="background:${PLACEHOLDER_BG[i % PLACEHOLDER_BG.length]}">Photo ${i + 1}</div>`;
 }
 function promptHTML(p) {
-  return `<section class="prompt${p.flag ? " flag" : ""}"><p class="q">${esc(p.q)}</p><p class="a">${esc(p.a)}</p><button class="like-btn" type="button" aria-label="Like this answer" data-like>${heart}</button></section>`;
+  return `<section class="prompt${p.flag ? " flag" : ""}"><p class="q">${esc(p.q)}</p><p class="a">${esc(p.a)}</p></section>`;
 }
 
 function render() {
@@ -876,7 +865,6 @@ card.addEventListener("click", e => { if (Math.abs(dx) > 8) { e.stopPropagation(
 btnYes.addEventListener("click", () => decide("right", "tapped ♥"));
 // The ✕ never works. Even if a tap somehow lands, it just runs away again.
 btnNo.addEventListener("click", dodge);
-card.addEventListener("click", e => { if (e.target.closest("[data-like]")) decide("right", "liked a photo or prompt"); });
 
 // A small left-right wiggle on open so people know the card swipes.
 card.classList.add("nudge");
