@@ -195,6 +195,23 @@ button { touch-action: manipulation; -webkit-user-select: none; user-select: non
   text-wrap: balance;
 }
 
+.prompt.flag .q {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--yes);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-size: 12px;
+}
+.prompt.flag .q::before {
+  content: "";
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--yes);
+  box-shadow: 0 0 0 4px rgba(47,122,85,.15);
+}
+
 .vitals {
   background: var(--card);
   border-radius: 10px;
@@ -275,7 +292,81 @@ button { touch-action: manipulation; -webkit-user-select: none; user-select: non
   display: grid; place-items: center;
   box-shadow: 0 4px 16px rgba(29,26,28,.2);
   cursor: pointer;
-  transition: transform .15s;
+  scale: var(--s, 1);
+  transition: transform .15s, scale .25s ease-out;
+}
+.act.no.runaway {
+  position: fixed;
+  z-index: 15;
+  transition: transform .15s, scale .25s ease-out, left .22s cubic-bezier(.2,.8,.3,1.2), top .22s cubic-bezier(.2,.8,.3,1.2);
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  top: calc(64px + env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
+  z-index: 40;
+  background: var(--ink);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 999px;
+  white-space: nowrap;
+  animation: rise .3s ease-out;
+}
+
+/* Are-you-sure sheet */
+.sheet-back {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(29,26,28,.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fade .2s ease-out;
+}
+.sheet {
+  width: 100%;
+  max-width: 480px;
+  background: var(--card);
+  border-radius: 18px 18px 0 0;
+  padding: 26px max(22px, env(safe-area-inset-left, 0px)) calc(22px + env(safe-area-inset-bottom, 0px)) max(22px, env(safe-area-inset-right, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: rise .3s cubic-bezier(.2,.8,.3,1);
+}
+.sheet h3 {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 34px;
+  line-height: 1.05;
+  margin: 0;
+  text-wrap: balance;
+}
+.sheet p { margin: 0 0 6px; color: var(--muted); }
+.sheet button {
+  font: 500 16px var(--body);
+  border-radius: 999px;
+  padding: 14px 18px;
+  cursor: pointer;
+  border: 0;
+}
+.sheet .stay { background: var(--accent); color: #fff; }
+.sheet .leave { background: transparent; color: var(--muted); font-size: 14px; padding: 8px; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+#confetti {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 25;
+  pointer-events: none;
 }
 .act:active { transform: scale(.9); }
 .act:focus-visible, .like-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
@@ -341,7 +432,7 @@ button { touch-action: manipulation; -webkit-user-select: none; user-select: non
 @media (prefers-reduced-motion: reduce) {
   .card.flying, .card.snap { transition: none; }
   .card.nudge { animation: none; }
-  .result { animation: none; }
+  .result, .sheet, .sheet-back, .toast { animation: none; }
 }
 </style>
 </head>
@@ -385,6 +476,9 @@ const CONFIG = {
   // 2) Phone push (no account): install the ntfy app, subscribe to a hard-to-guess topic.
   NTFY_TOPIC: "",                  // e.g. "unhinged-ahmad-83kq"
 
+  // 3) Text messages: a URL that accepts POST {message} and texts your phones.
+  SMS_WEBHOOK: "",
+
   // Who this link was sent to (shows up in your notification, not on the page).
   SENT_TO: "the mystery recipient",
 };
@@ -403,6 +497,8 @@ const PROFILE = {
   ],
   prompts: [
     { q: "I'm looking for", a: "Someone who will swipe right on this, specifically." },
+    { q: "A promise I'll keep", a: "I will always take good photos of you." },
+    { q: "Green flag", a: "Will learn how to cut apples for you.", flag: true },
     { q: "My most irrational fear", a: "That you're going to tap the X. Don't." },
     { q: "Together, we could", a: "Tell people we met on a dating app that doesn't exist." },
   ],
@@ -431,6 +527,14 @@ const RESULT = {
   },
   changeMind: "Change your mind?",
 };
+
+// Shown one after another when they try to swipe left.
+const ARE_YOU_SURE = [
+  { title: "Are you sure?", body: "This is a very good profile.", stay: "No, take me back", leave: "Yes, swipe left" },
+  { title: "Are you <i>really</i> sure?", body: "Think about all the good photos you'd get.", stay: "Okay, fine, take me back", leave: "Yes, I'm sure" },
+  { title: "Ahmad's mom has been informed.", body: "She's not mad. Just disappointed.", stay: "I'll reconsider", leave: "Swipe left anyway" },
+];
+const RUNAWAY = { maxDodges: 5, giveUp: "Fine. The ✕ will stay still now." };
 /* ===================================================================== */
 
 const ICONS = {
@@ -461,7 +565,7 @@ function photoHTML(i) {
   return `<div class="photo placeholder" style="background:${PLACEHOLDER_BG[i % PLACEHOLDER_BG.length]}">Photo ${i + 1}${btn}</div>`;
 }
 function promptHTML(p) {
-  return `<section class="prompt"><p class="q">${esc(p.q)}</p><p class="a">${esc(p.a)}</p><button class="like-btn" type="button" aria-label="Like this answer" data-like>${heart}</button></section>`;
+  return `<section class="prompt${p.flag ? " flag" : ""}"><p class="q">${esc(p.q)}</p><p class="a">${esc(p.a)}</p><button class="like-btn" type="button" aria-label="Like this answer" data-like>${heart}</button></section>`;
 }
 
 function render() {
@@ -483,52 +587,158 @@ function render() {
 }
 render();
 
+/* ---------- Sneaky stats (only sent to you) ---------- */
+const t0 = performance.now();
+const stats = { maxScroll: 0, dodges: 0, backouts: 0, changedMind: false };
+const fmtTime = s => s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+
 /* ---------- Notifications ---------- */
-function notify(choice, extra) {
+function notify(choice, how) {
+  const secs = Math.round((performance.now() - t0) / 1000);
   const verdict = choice === "right" ? "swiped RIGHT ❤️" : "swiped LEFT ✖️";
-  const message = `${CONFIG.SENT_TO} ${verdict} on your Unhinged profile.`;
+  const details = [
+    `Looked for ${fmtTime(secs)}`,
+    `scrolled ${Math.round(stats.maxScroll * 100)}% of the profile`,
+    `chased the ✕ ${stats.dodges} time${stats.dodges === 1 ? "" : "s"}`,
+    `backed out of swiping left ${stats.backouts} time${stats.backouts === 1 ? "" : "s"}`,
+  ];
+  if (stats.changedMind) details.push("changed their mind");
+  const message = `${CONFIG.SENT_TO} ${verdict} on your Unhinged profile (${how}).\n${details.join(", ")}.`;
   const payload = {
     _subject: `Unhinged: ${verdict}`,
     message,
     choice,
-    how: extra.how,
-    changed_mind: extra.changedMind ? "yes" : "no",
+    how,
+    seconds_looking: secs,
+    scrolled_percent: Math.round(stats.maxScroll * 100),
+    x_dodges: stats.dodges,
+    left_swipe_backouts: stats.backouts,
+    changed_mind: stats.changedMind ? "yes" : "no",
     time: new Date().toString(),
   };
+  const post = (url, opts) => fetch(url, Object.assign({ method: "POST", keepalive: true }, opts)).catch(() => {});
   const jobs = [];
   if (CONFIG.FORMSPREE_ENDPOINT) {
-    jobs.push(fetch(CONFIG.FORMSPREE_ENDPOINT, {
-      method: "POST",
+    jobs.push(post(CONFIG.FORMSPREE_ENDPOINT, {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(payload),
-      keepalive: true,
-    }).catch(() => {}));
+    }));
   }
   if (CONFIG.NTFY_TOPIC) {
-    jobs.push(fetch("https://ntfy.sh/" + encodeURIComponent(CONFIG.NTFY_TOPIC), {
-      method: "POST",
+    jobs.push(post("https://ntfy.sh/" + encodeURIComponent(CONFIG.NTFY_TOPIC), {
       body: message,
-      headers: { Title: "Unhinged", Tags: choice === "right" ? "heart" : "x" },
-      keepalive: true,
-    }).catch(() => {}));
+      headers: { Title: "Unhinged: " + verdict.replace(/[^\x20-\x7e]/g, "").trim(), Tags: choice === "right" ? "heart" : "x" },
+    }));
+  }
+  if (CONFIG.SMS_WEBHOOK) {
+    jobs.push(post(CONFIG.SMS_WEBHOOK, {
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }));
   }
   return Promise.all(jobs);
 }
 
-/* ---------- Swiping ---------- */
+/* ---------- Elements ---------- */
 const card = document.getElementById("card");
 const stampYes = document.getElementById("stampYes");
 const stampNo = document.getElementById("stampNo");
 const actions = document.getElementById("actions");
+const btnNo = document.getElementById("btnNo");
+const btnYes = document.getElementById("btnYes");
 let decided = false;
-let changedMind = false;
+let sheetOpen = false;
 
 function setStamps(dx) {
   const t = Math.min(Math.abs(dx) / 110, 1);
   stampYes.style.opacity = dx > 0 ? t : 0;
   stampNo.style.opacity = dx < 0 ? t : 0;
 }
+function snapBack() {
+  card.classList.remove("flying");
+  card.classList.add("snap");
+  card.style.transform = "";
+  setStamps(0);
+}
+function toast(text) {
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.textContent = text;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2200);
+}
 
+/* ---------- Shrinking ✕, growing ♥ ---------- */
+// The further they scroll, the smaller ✕ gets and the bigger ♥ gets. It never grows back.
+card.addEventListener("scroll", () => {
+  const max = card.scrollHeight - card.clientHeight;
+  const p = max > 0 ? Math.min(card.scrollTop / max, 1) : 0;
+  if (p <= stats.maxScroll) return;
+  stats.maxScroll = p;
+  btnNo.style.setProperty("--s", (1 - 0.5 * p).toFixed(3));
+  btnYes.style.setProperty("--s", (1 + 0.45 * p).toFixed(3));
+}, { passive: true });
+
+/* ---------- Runaway ✕ ---------- */
+function dodge(e) {
+  if (decided || sheetOpen || stats.dodges >= RUNAWAY.maxDodges) return;
+  e.preventDefault();
+  stats.dodges++;
+  const r = btnNo.getBoundingClientRect();
+  if (!btnNo.classList.contains("runaway")) {
+    // Pin it where it is first, so the jump animates.
+    btnNo.style.left = r.left + "px";
+    btnNo.style.top = r.top + "px";
+    btnNo.classList.add("runaway");
+    document.querySelector(".swipe-hint").hidden = true;
+    void btnNo.offsetWidth;
+  }
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const heart = btnYes.getBoundingClientRect();
+  let x, y, tries = 0;
+  do {
+    x = 16 + Math.random() * (vw - r.width - 32);
+    y = 90 + Math.random() * (vh - r.height - 200);
+    tries++;
+  } while (tries < 30 && (
+    Math.hypot(x - r.left, y - r.top) < 140 ||
+    (x + r.width > heart.left - 20 && y + r.height > heart.top - 20)
+  ));
+  btnNo.style.left = x + "px";
+  btnNo.style.top = y + "px";
+  try { navigator.vibrate && navigator.vibrate(8); } catch (_) {}
+  if (stats.dodges === RUNAWAY.maxDodges) setTimeout(() => toast(RUNAWAY.giveUp), 300);
+}
+btnNo.addEventListener("touchstart", dodge, { passive: false });
+btnNo.addEventListener("pointerenter", e => { if (e.pointerType === "mouse") dodge(e); });
+btnNo.addEventListener("pointerdown", e => { if (e.pointerType === "mouse") dodge(e); });
+
+/* ---------- Are you sure? ---------- */
+function requestLeft(how) {
+  if (decided || sheetOpen) return;
+  snapBack();
+  askSure(0, how);
+}
+function askSure(step, how) {
+  sheetOpen = true;
+  const s = ARE_YOU_SURE[step];
+  const back = document.createElement("div");
+  back.className = "sheet-back";
+  back.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><h3>${s.title}</h3><p>${esc(s.body)}</p>` +
+    `<button type="button" class="stay">${esc(s.stay)}</button><button type="button" class="leave">${esc(s.leave)}</button></div>`;
+  const close = () => { back.remove(); sheetOpen = false; };
+  back.querySelector(".stay").addEventListener("click", () => { stats.backouts++; close(); });
+  back.addEventListener("click", e => { if (e.target === back) { stats.backouts++; close(); } });
+  back.querySelector(".leave").addEventListener("click", () => {
+    close();
+    if (step + 1 < ARE_YOU_SURE.length) askSure(step + 1, how);
+    else decide("left", how);
+  });
+  document.body.appendChild(back);
+  back.querySelector(".stay").focus({ preventScroll: true });
+}
+
+/* ---------- Deciding ---------- */
 function decide(choice, how) {
   if (decided) return;
   decided = true;
@@ -540,7 +750,7 @@ function decide(choice, how) {
   card.style.opacity = "0";
   setStamps(dir * 200);
   actions.hidden = true;
-  notify(choice, { how, changedMind });
+  notify(choice, how);
   setTimeout(() => showResult(choice), 380);
 }
 
@@ -556,7 +766,7 @@ function showResult(choice) {
     `<button type="button">${esc(RESULT.changeMind)}</button>`;
   el.querySelector("button").addEventListener("click", () => {
     el.remove();
-    changedMind = true;
+    stats.changedMind = true;
     decided = false;
     card.classList.remove("flying");
     card.style.opacity = "1";
@@ -565,12 +775,60 @@ function showResult(choice) {
     actions.hidden = false;
   });
   document.querySelector(".app").appendChild(el);
+  if (choice === "right") confetti();
 }
 
+/* ---------- Confetti ---------- */
+function confetti() {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const c = document.createElement("canvas");
+  c.id = "confetti";
+  document.body.appendChild(c);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const W = c.width = window.innerWidth * dpr;
+  const H = c.height = window.innerHeight * dpr;
+  const ctx = c.getContext("2d");
+  const colors = ["#f6c945", "#ff8fb1", "#ffffff", "#7fd3a8", "#c9a7ff", "#ff6b6b"];
+  const bits = Array.from({ length: 160 }, (_, i) => ({
+    x: W / 2 + (Math.random() - 0.5) * W * 0.3,
+    y: H * 0.45,
+    vx: (Math.random() - 0.5) * 18 * dpr,
+    vy: (-Math.random() * 20 - 8) * dpr,
+    w: (6 + Math.random() * 6) * dpr,
+    h: (8 + Math.random() * 10) * dpr,
+    rot: Math.random() * Math.PI,
+    vr: (Math.random() - 0.5) * 0.3,
+    color: colors[i % colors.length],
+  }));
+  const start = performance.now();
+  (function frame(now) {
+    const t = now - start;
+    ctx.clearRect(0, 0, W, H);
+    ctx.globalAlpha = t > 2600 ? Math.max(0, 1 - (t - 2600) / 900) : 1;
+    for (const b of bits) {
+      b.vy += 0.55 * dpr;
+      b.vx *= 0.99;
+      b.vy *= 0.99;
+      b.x += b.vx;
+      b.y += b.vy;
+      b.rot += b.vr;
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(b.rot);
+      ctx.fillStyle = b.color;
+      ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h * Math.abs(Math.cos(b.rot * 2)));
+      ctx.restore();
+    }
+    if (t < 3500) requestAnimationFrame(frame);
+    else c.remove();
+  })(start);
+}
+
+/* ---------- Swiping ---------- */
 let startX = 0, startY = 0, dx = 0, dragging = false, locked = null, pid = null;
 let lastX = 0, lastT = 0, vx = 0; // px per ms, for quick flicks
 card.addEventListener("pointerdown", e => {
-  if (decided || e.button > 0) return;
+  if (decided || sheetOpen || e.button > 0) return;
   startX = lastX = e.clientX; startY = e.clientY; dx = 0; vx = 0; lastT = e.timeStamp;
   dragging = true; locked = null; pid = e.pointerId;
   card.classList.remove("snap", "flying", "nudge");
@@ -597,19 +855,17 @@ function endDrag(e) {
   if (locked !== "x") return;
   const threshold = Math.min(110, card.clientWidth * 0.26);
   const flick = Math.abs(vx) > 0.6 && Math.abs(dx) > 40 && Math.sign(vx) === Math.sign(dx);
-  if (dx > threshold || (flick && dx > 0)) return decide("right", "swipe");
-  if (dx < -threshold || (flick && dx < 0)) return decide("left", "swipe");
-  card.classList.add("snap");
-  card.style.transform = "";
-  setStamps(0);
+  if (dx > threshold || (flick && dx > 0)) return decide("right", "swiped");
+  if (dx < -threshold || (flick && dx < 0)) return requestLeft("swiped");
+  snapBack();
 }
 card.addEventListener("pointerup", endDrag);
 card.addEventListener("pointercancel", endDrag);
 // Swallow the click that follows a drag so it doesn't hit a like button.
 card.addEventListener("click", e => { if (Math.abs(dx) > 8) { e.stopPropagation(); e.preventDefault(); dx = 0; } }, true);
 
-document.getElementById("btnYes").addEventListener("click", () => decide("right", "button"));
-document.getElementById("btnNo").addEventListener("click", () => decide("left", "button"));
+btnYes.addEventListener("click", () => decide("right", "tapped ♥"));
+btnNo.addEventListener("click", () => requestLeft("tapped ✕"));
 card.addEventListener("click", e => { if (e.target.closest("[data-like]")) decide("right", "liked a photo or prompt"); });
 
 // A small left-right wiggle on open so people know the card swipes.
@@ -619,8 +875,9 @@ card.addEventListener("animationend", () => card.classList.remove("nudge"));
 document.addEventListener("gesturestart", e => e.preventDefault());
 
 document.addEventListener("keydown", e => {
+  if (sheetOpen) return;
   if (e.key === "ArrowRight") decide("right", "keyboard");
-  if (e.key === "ArrowLeft") decide("left", "keyboard");
+  if (e.key === "ArrowLeft") requestLeft("keyboard");
 });
 </script>
 </body>
